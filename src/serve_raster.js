@@ -57,6 +57,7 @@ module.exports = function(options, repo, params, id) {
               callback(err, { data: data });
             });
           } else if (protocol == 'mbtiles') {
+            var dataStart = process.hrtime();
             var parts = req.url.split('/');
             var source = map.sources[parts[2]];
             var z = parts[3] | 0,
@@ -78,6 +79,8 @@ module.exports = function(options, repo, params, id) {
 
                 response.data = zlib.unzipSync(data);
 
+                var dataElapsed = process.hrtime(dataStart);
+                global.timings.data += dataElapsed[0] + dataElapsed[1] / 1e9;
                 callback(null, response);
               }
             });
@@ -184,6 +187,8 @@ module.exports = function(options, repo, params, id) {
 
   var respondImage = function(z, lon, lat, bearing, pitch,
                               width, height, scale, format, res, next) {
+    global.timings.tiles++;
+
     if (Math.abs(lon) > 180 || Math.abs(lat) > 85.06) {
       return res.status(400).send('Invalid center');
     }
@@ -213,10 +218,15 @@ module.exports = function(options, repo, params, id) {
         params.width *= 2;
         params.height *= 2;
       }
+      var renderStart = process.hrtime();
       renderer.render(params, function(err, data) {
         pool.release(renderer);
+        var renderElapsed = process.hrtime(renderStart);
+        global.timings.render += renderElapsed[0] + renderElapsed[1] / 1e9;
+
         if (err) console.log(err);
 
+        var compressStart = process.hrtime();
         var image = sharp(data, {
           raw: {
             width: params.width * scale,
@@ -243,9 +253,12 @@ module.exports = function(options, repo, params, id) {
           image.quality(formatEncoding || 90);
         }
         image.toBuffer(function(err, buffer, info) {
+          var compressElapsed = process.hrtime(compressStart);
+          global.timings.compress += compressElapsed[0] + compressElapsed[1] / 1e9;
           if (!buffer) {
             return res.status(404).send('Not found');
           }
+          global.timings.sizes += (buffer.length || 0) / 1024 / 1024;
 
           var md5 = crypto.createHash('md5').update(buffer).digest('base64');
           res.set({

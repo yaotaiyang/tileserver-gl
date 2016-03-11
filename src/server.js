@@ -1,6 +1,14 @@
 #!/usr/bin/env node
 'use strict';
 
+global.timings = {
+  tiles: 0,
+  data: 0,
+  render: 0,
+  compress: 0,
+  sizes: 0
+};
+
 process.env.UV_THREADPOOL_SIZE =
     Math.ceil(Math.max(4, require('os').cpus().length * 1.5));
 
@@ -145,9 +153,9 @@ module.exports = function(opts, callback) {
   var server = app.listen(process.env.PORT || opts.port, function() {
     console.log('Listening at http://%s:%d/',
                 this.address().address, this.address().port);
-
-    return callback();
   });
+
+  //setInterval(function() {console.log(global.timings);}, 2000);
 
   setTimeout(callback, 1000);
   return {
