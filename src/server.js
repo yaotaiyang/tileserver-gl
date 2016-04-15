@@ -4,7 +4,8 @@
 process.env.UV_THREADPOOL_SIZE =
     Math.ceil(Math.max(4, require('os').cpus().length * 1.5));
 
-var fs = require('fs'),
+var async = require('async'),
+    fs = require('fs'),
     path = require('path');
 
 var clone = require('clone'),
@@ -62,6 +63,7 @@ module.exports = function(opts, callback) {
   paths.mbtiles = path.resolve(paths.root, paths.mbtiles || '');
 
   var vector = clone(config.vector || {});
+  var composite = {};
 
   Object.keys(config.styles || {}).forEach(function(id) {
     var item = config.styles[id];
@@ -89,7 +91,15 @@ module.exports = function(opts, callback) {
             };
             return id;
           }
-        }, function(font) {
+        }, function(ids) {
+            var id = ids.join(',');
+            if (ids.length > 1) {
+              composite[id] = {
+                ids: ids
+              };
+            }
+            return id;
+          }, function(font) {
           serving.fonts[font] = true;
         }));
     }
@@ -105,14 +115,24 @@ module.exports = function(opts, callback) {
 
   app.use(cors());
 
+  var queue = [];
   Object.keys(vector).forEach(function(id) {
-    var item = vector[id];
-    if (!item.mbtiles || item.mbtiles.length == 0) {
-      console.log('Missing "mbtiles" property for ' + id);
-      return;
-    }
+    queue.push(function(callback) {
+      var item = vector[id];
+      if (!item.mbtiles || item.mbtiles.length == 0) {
+        console.log('Missing "mbtiles" property for ' + id);
+        return;
+      }
 
-    app.use('/', serve_vector(options, serving.vector, item, id));
+      app.use('/', serve_vector(options, serving.vector, item, id, callback));
+    });
+  });
+
+  async.parallel(queue, function(err, results) {
+    Object.keys(composite).forEach(function(id) {
+      var item = composite[id];
+      app.use('/', serve_vector(options, serving.vector, item, id, null));
+    });
   });
 
   app.get('/styles.json', function(req, res, next) {
@@ -132,6 +152,9 @@ module.exports = function(opts, callback) {
   var addTileJSONs = function(arr, req, type) {
     Object.keys(serving[type]).forEach(function(id) {
       var info = clone(serving[type][id]);
+      if (type == 'vector') {
+        info = info.tileJSON;
+      }
       info.tiles = utils.getTileUrls(req, info.tiles,
                                      type + '/' + id, info.format);
       arr.push(info);
@@ -195,8 +218,9 @@ module.exports = function(opts, callback) {
         }
       }
     });
-    var data = clone(serving.vector || {});
-    Object.keys(data).forEach(function(id) {
+    var data = {};
+    Object.keys(serving.vector || {}).forEach(function(id) {
+      data[id] = clone(serving.vector[id]['tileJSON']);
       var vector = data[id];
       var center = vector.center;
       if (center) {
@@ -230,7 +254,7 @@ module.exports = function(opts, callback) {
 
   serveTemplate('/vector/:id/$', 'xray', function(params) {
     var id = params.id;
-    var vector = serving.vector[id];
+    var vector = (serving.vector[id] || {})['tileJSON'];
     if (!vector) {
       return null;
     }

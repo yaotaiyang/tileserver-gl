@@ -1,7 +1,9 @@
 'use strict';
 
-var crypto = require('crypto'),
-    path = require('path');
+var async = require('async'),
+    crypto = require('crypto'),
+    path = require('path'),
+    zlib = require('zlib');
 
 var clone = require('clone'),
     express = require('express'),
@@ -9,7 +11,96 @@ var clone = require('clone'),
 
 var utils = require('./utils');
 
-module.exports = function(options, repo, params, id) {
+function CompositeSource(repo, ids, id) {
+  this.repo = repo;
+  this.ids = ids;
+  this.id = id;
+}
+
+CompositeSource.prototype.getTile = function(z, x, y, callback) {
+  var queue = [];
+  this.ids.forEach(function(id) {
+    queue.push(function(callback) {
+      this.repo[id].source.getTile(z, x, y, function(err, data, headers) {
+        if (err) {
+          return callback(null, null);
+        } else {
+          zlib.gunzip(data, function(err, gunzipped) {
+            if (err) {
+              callback(null, null);
+            } else {
+              callback(null, gunzipped);
+            }
+          });
+        }
+      });
+    }.bind(this));
+  }.bind(this));
+
+  return async.parallel(queue, function(err, results) {
+    var buffers = [];
+    results.forEach(function(result) {
+      if (result) buffers.push(result);
+    });
+    var concated = Buffer.concat(buffers);
+    if (concated.length == 0) {
+      //return callback(null, new Buffer(0), {});
+      return callback(new Error('does not exist'), null, {});
+    } else {
+      return zlib.gzip(concated, function(err, gzipped) {
+        return callback(err, gzipped, {
+          'Content-type': 'application/x-protobuf',
+          'content-encoding': 'gzip'
+        });
+      });
+    }
+  });
+};
+
+
+CompositeSource.prototype.getTileJSON = function() {
+  var result = null;
+  this.ids.forEach(function(id) {
+    var single = clone(this.repo[id].tileJSON);
+    if (!result) {
+      result = single;
+    } else {
+      result['name'] = (result['name'] || '') + ', ' + (single['name'] || '');
+      result['attribution'] = (result['attribution'] || '') + ', ' +
+                              (single['attribution'] || '');
+      result['description'] = (result['description'] || '') + ', ' +
+                              (single['description'] || '');
+      result['minzoom'] = Math.min(result['minzoom'] || 0,
+                                   single['minzoom'] || 0);
+      result['maxzoom'] = Math.max(result['maxzoom'], single['maxzoom']);
+      if (single['bounds']) {
+        if (result['bounds']) {
+          result['bounds'] = [
+            Math.min(result['bounds'][0], single['bounds'][0]),
+            Math.min(result['bounds'][1], single['bounds'][1]),
+            Math.max(result['bounds'][2], single['bounds'][2]),
+            Math.max(result['bounds'][3], single['bounds'][3])
+          ];
+        } else {
+          result['bounds'] = single['bounds'];
+        }
+      }
+      result['vector_layers'] =
+          (result['vector_layers'] || []).concat(single['vector_layers']);
+    }
+  }.bind(this));
+
+  delete result['filesize'];
+  result['tilejson'] = '2.0.0';
+  result['basename'] = this.id;
+  result['format'] = 'pbf';
+
+  utils.fixTileJSONCenter(result);
+  return result;
+};
+
+
+module.exports = function(options, repo, params, id, callback) {
   var app = express().disable('x-powered-by');
 
   var mbtilesFile = params.mbtiles;
@@ -17,23 +108,34 @@ module.exports = function(options, repo, params, id) {
     'tiles': params.domains || options.domains
   };
 
-  repo[id] = tileJSON;
+  repo[id] = {
+    tileJSON: tileJSON
+  };
 
-  var source = new mbtiles(path.join(options.paths.mbtiles, mbtilesFile),
-                           function(err) {
-    source.getInfo(function(err, info) {
-      tileJSON['name'] = id;
+  var source;
+  if (!params.ids) {
+    source = new mbtiles(path.join(options.paths.mbtiles, mbtilesFile),
+                         function(err) {
+      source.getInfo(function(err, info) {
+        tileJSON['name'] = id;
 
-      Object.assign(tileJSON, info);
+        Object.assign(tileJSON, info);
 
-      tileJSON['tilejson'] = '2.0.0';
-      tileJSON['basename'] = id;
-      tileJSON['format'] = 'pbf';
+        tileJSON['tilejson'] = '2.0.0';
+        tileJSON['basename'] = id;
+        tileJSON['format'] = 'pbf';
 
-      Object.assign(tileJSON, params.tilejson || {});
-      utils.fixTileJSONCenter(tileJSON);
+        Object.assign(tileJSON, params.tilejson || {});
+        utils.fixTileJSONCenter(tileJSON);
+        if (callback) callback();
+      });
     });
-  });
+  } else {
+    source = new CompositeSource(repo, params.ids, id);
+    repo[id].tileJSON = tileJSON = source.getTileJSON();
+    if (callback) setTimeout(callback, 0);
+  }
+  repo[id].source = source;
 
   var tilePattern = '/vector/' + id + '/:z(\\d+)/:x(\\d+)/:y(\\d+).pbf';
 
