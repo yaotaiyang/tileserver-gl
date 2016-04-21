@@ -31,7 +31,8 @@ mbgl.on('message', function(e) {
   }
 });
 
-module.exports = function(options, repo, params, id) {
+module.exports = function(options, repo, params, id, getSourceByFiles, getSourceByIds) {
+  console.log('serve_raster', id);
   var app = express().disable('x-powered-by');
 
   var rootPath = options.paths.root;
@@ -58,28 +59,33 @@ module.exports = function(options, repo, params, id) {
             });
           } else if (protocol == 'mbtiles') {
             var parts = req.url.split('/');
+            console.log('raster get', parts[2]);
             var source = map.sources[parts[2]];
             var z = parts[3] | 0,
                 x = parts[4] | 0,
                 y = parts[5].split('.')[0] | 0;
-            source.getTile(z, x, y, function(err, data, headers) {
-              if (err) {
-                //console.log('MBTiles error, serving empty', err);
-                callback(null, { data: new Buffer(0) });
-              } else {
-                var response = {};
+            console.log('getting tiles from', req.url);
+            getSourceByIds(parts[2].split(','), function(err, id, source) {
+              console.log('got source');
+              source.getTile(z, x, y, function(err, data, headers) {
+                if (err) {
+                  //console.log('MBTiles error, serving empty', err);
+                  callback(null, { data: new Buffer(0) });
+                } else {
+                  var response = {};
 
-                if (headers['Last-Modified']) {
-                  response.modified = new Date(headers['Last-Modified']);
+                  if (headers['Last-Modified']) {
+                    response.modified = new Date(headers['Last-Modified']);
+                  }
+                  if (headers['ETag']) {
+                    response.etag = headers['ETag'];
+                  }
+
+                  response.data = zlib.unzipSync(data);
+
+                  callback(null, response);
                 }
-                if (headers['ETag']) {
-                  response.etag = headers['ETag'];
-                }
-
-                response.data = zlib.unzipSync(data);
-
-                callback(null, response);
-              }
+              });
             });
           } else if (protocol == 'http' || protocol == 'https') {
             request({
@@ -154,15 +160,16 @@ module.exports = function(options, repo, params, id) {
       delete source.url;
 
       queue.push(function(callback) {
-        var mbtilesFile = url.substring('mbtiles://'.length);
-        map.sources[name] = new mbtiles(
-          path.join(options.paths.mbtiles, mbtilesFile), function(err) {
-          map.sources[name].getInfo(function(err, info) {
+        var mbtilesid = url.substring('mbtiles://'.length);
+        getSourceByFiles(mbtilesid, function(err, id, mbtilesSource) {
+          console.log('raster set', name);
+          map.sources[name] = mbtilesSource;
+          mbtilesSource.getInfo(function(err, info) {
             Object.assign(source, info);
             source.basename = name;
             source.tiles = [
               // meta url which will be detected when requested
-              'mbtiles://' + name + '/{z}/{x}/{y}.pbf'
+              'mbtiles://' + id + '/{z}/{x}/{y}.pbf'
             ];
             callback(null);
           });

@@ -13,9 +13,11 @@ var clone = require('clone'),
     express = require('express'),
     handlebars = require('handlebars'),
     mercator = new (require('sphericalmercator'))(),
+    mbtiles = require('mbtiles'),
     morgan = require('morgan');
 
-var serve_font = require('./serve_font'),
+var CompositeSource = require('./compositesource'),
+    serve_font = require('./serve_font'),
     serve_raster = require('./serve_raster'),
     serve_style = require('./serve_style'),
     serve_vector = require('./serve_vector'),
@@ -64,6 +66,46 @@ module.exports = function(opts, callback) {
 
   var vector = clone(config.vector || {});
   var composite = {};
+  var mbtilesRepo = {};
+
+  var getSourceByIds = function(ids, callback) {
+    console.log('getting', ids);
+    var id = ids.join(',');
+    if (mbtilesRepo[id]) {
+      if (mbtilesRepo[id].callbacks) {
+        console.log('-- registering for cb', ids);
+        mbtilesRepo[id].callbacks.push(callback);
+      } else {
+        //setTimeout(function() {
+          console.log('- already exists', ids);
+          callback(null, id, mbtilesRepo[id].source);
+        //}, 0);
+      }
+      return;
+    }
+    var result = {
+      id: id,
+      source: null,
+      callbacks: [callback]
+    };
+    mbtilesRepo[id] = result;
+    var doCallbacks = function() {
+      console.log('doCallbacks', id);
+      var cbs = result.callbacks;
+      result.callbacks = null;
+      cbs.forEach(function(cb) {
+        cb(null, id, result.source);
+      });
+    };
+    if (ids.length > 1) {
+      console.log('+ new CompositeSource', ids);
+      result.source = new CompositeSource(getSourceByIds, ids, id, doCallbacks);
+    } else {
+      console.log('+ new mbtiles', id);
+      result.source = new mbtiles(
+          path.join(options.paths.mbtiles, id + '.mbtiles'), doCallbacks);
+    }
+  };
 
   Object.keys(config.styles || {}).forEach(function(id) {
     var item = config.styles[id];
@@ -72,39 +114,57 @@ module.exports = function(opts, callback) {
       return;
     }
 
+    var reportVector = function(mbtiles) {
+      var vectorItemId;
+      Object.keys(vector).forEach(function(id) {
+        if (vector[id].mbtiles == mbtiles) {
+          vectorItemId = id;
+        }
+      });
+      if (vectorItemId) { // mbtiles exist in the vector config
+        vector[vectorItemId].dontServe =
+          vector[vectorItemId].dontServe && !item.vector;
+        return vectorItemId;
+      } else {
+        var id = mbtiles.substr(0, mbtiles.lastIndexOf('.')) || mbtiles;
+        while (vector[id]) id += '_';
+        vector[id] = {
+          mbtiles: mbtiles,
+          dontServe: !item.vector
+        };
+        return id;
+      }
+    };
+
+    var reportVectorComposite = function(ids) {
+      var id = ids.join(',');
+      if (ids.length > 1) {
+        composite[id] = {
+          ids: ids,
+          dontServe: !item.vector
+        };
+      }
+    };
+
+    var getSourceByFiles = function(mbtilesid, callback) {
+      var submbtiles = mbtilesid.split(',');
+      var ids = [];
+      submbtiles.forEach(function(mbtiles) {
+        ids.push(reportVector(mbtiles));
+      });
+      reportVectorComposite(ids);
+      getSourceByIds(ids, callback);
+    };
+
     if (item.vector !== false) {
       app.use('/', serve_style(options, serving.styles, item, id,
-        function(mbtiles) {
-          var vectorItemId;
-          Object.keys(vector).forEach(function(id) {
-            if (vector[id].mbtiles == mbtiles) {
-              vectorItemId = id;
-            }
-          });
-          if (vectorItemId) { // mbtiles exist in the vector config
-            return vectorItemId;
-          } else {
-            var id = mbtiles.substr(0, mbtiles.lastIndexOf('.')) || mbtiles;
-            while (vector[id]) id += '_';
-            vector[id] = {
-              'mbtiles': mbtiles
-            };
-            return id;
-          }
-        }, function(ids) {
-            var id = ids.join(',');
-            if (ids.length > 1) {
-              composite[id] = {
-                ids: ids
-              };
-            }
-            return id;
-          }, function(font) {
+        getSourceByFiles, function(font) {
           serving.fonts[font] = true;
         }));
     }
     if (item.raster !== false) {
-      app.use('/', serve_raster(options, serving.raster, item, id));
+      app.use('/', serve_raster(options, serving.raster, item, id,
+        getSourceByFiles, getSourceByIds));
     }
   });
 
@@ -123,15 +183,24 @@ module.exports = function(opts, callback) {
         console.log('Missing "mbtiles" property for ' + id);
         return;
       }
+      if (item.dontServe) {
+        //return;
+      }
 
-      app.use('/', serve_vector(options, serving.vector, item, id, callback));
+      app.use('/', serve_vector(options, serving.vector, item, id,
+                                getSourceByIds));
+      callback(null);
     });
   });
 
   async.parallel(queue, function(err, results) {
     Object.keys(composite).forEach(function(id) {
       var item = composite[id];
-      app.use('/', serve_vector(options, serving.vector, item, id, null));
+      if (item.dontServe) {
+        //return;
+      }
+      app.use('/', serve_vector(options, serving.vector, item, id,
+                                getSourceByIds));
     });
   });
 
