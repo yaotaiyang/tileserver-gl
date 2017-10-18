@@ -11,7 +11,7 @@ module.exports.getPublicUrl = function(publicUrl, req) {
   return publicUrl || (req.protocol + '://' + req.headers.host + '/')
 }
 
-module.exports.getTileUrls = function(req, domains, path, format, aliases) {
+module.exports.getTileUrls = function(req, domains, path, format, publicUrl, aliases) {
 
   if (domains) {
     if (domains.constructor === String && domains.length > 0) {
@@ -54,10 +54,14 @@ module.exports.getTileUrls = function(req, domains, path, format, aliases) {
   }
 
   var uris = [];
-  domains.forEach(function(domain) {
-    uris.push(req.protocol + '://' + domain + '/' + path +
-              '/{z}/{x}/{y}.' + format + query);
-  });
+  if (!publicUrl) {
+    domains.forEach(function(domain) {
+      uris.push(req.protocol + '://' + domain + '/' + path +
+                '/{z}/{x}/{y}.' + format + query);
+    });
+  } else {
+    uris.push(publicUrl + path + '/{z}/{x}/{y}.' + format + query)
+  }
 
   return uris;
 };
