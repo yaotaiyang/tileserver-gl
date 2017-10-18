@@ -109,7 +109,7 @@ function start(opts) {
     }
 
     if (item.serve_data !== false) {
-      startupPromises.push(serve_style(options, serving.styles, item, id,
+      startupPromises.push(serve_style(options, serving.styles, item, id, opts.publicUrl,
         function(mbtiles, fromData) {
           var dataItemId;
           Object.keys(data).forEach(function(id) {
@@ -194,7 +194,7 @@ function start(opts) {
         version: styleJSON.version,
         name: styleJSON.name,
         id: id,
-        url: req.protocol + '://' + req.headers.host +
+        url: utils.getPublicUrl(opts.publicUrl, req) +
              '/styles/' + id + '/style.json' + query
       });
     });
@@ -260,6 +260,7 @@ function start(opts) {
             }
           }
           data['server_version'] = packageJson.name + ' v' + packageJson.version;
+          data['public_url'] = opts.publicUrl || '/';
           data['is_light'] = isLight;
           data['key_query_part'] =
               req.query.key ? 'key=' + req.query.key + '&amp;' : '';
@@ -293,8 +294,8 @@ function start(opts) {
 
         var query = req.query.key ? ('?key=' + req.query.key) : '';
         style.wmts_link = 'http://wmts.maptiler.com/' +
-          base64url('http://' + req.headers.host +
-            '/styles/' + id + '.json' + query) + '/wmts';
+          base64url(utils.getPublicUrl(opts.publicUrl, req) +
+            'styles/' + id + '.json' + query) + '/wmts';
 
         var tiles = utils.getTileUrls(
             req, style.serving_rendered.tiles,
@@ -322,8 +323,8 @@ function start(opts) {
 
         var query = req.query.key ? ('?key=' + req.query.key) : '';
         data_.wmts_link = 'http://wmts.maptiler.com/' +
-          base64url('http://' + req.headers.host +
-            '/data/' + id + '.json' + query) + '/wmts';
+          base64url(utils.getPublicUrl(opts.publicUrl, req) +
+            'data/' + id + '.json' + query) + '/wmts';
 
         var tiles = utils.getTileUrls(
             req, data_.tiles, 'data/' + id, data_.format, {

@@ -6,6 +6,11 @@ var path = require('path'),
 var clone = require('clone'),
     glyphCompose = require('glyph-pbf-composite');
 
+
+module.exports.getPublicUrl = function(publicUrl, req) {
+  return publicUrl || (req.protocol + '://' + req.headers.host + '/')
+}
+
 module.exports.getTileUrls = function(req, domains, path, format, aliases) {
 
   if (domains) {

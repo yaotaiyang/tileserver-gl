@@ -36,6 +36,11 @@ var opts = require('nomnom')
     default: true,
     help: 'Enable Cross-origin resource sharing headers'
   })
+  .option('public_url', {
+    abbr: 'u',
+    default: '',
+    help: 'Enable exposing the server on subpaths, not necessarily the root of the domain'
+  })
   .option('verbose', {
     abbr: 'V',
     flag: true,
@@ -54,12 +59,17 @@ var opts = require('nomnom')
 console.log('Starting ' + packageJson.name + ' v' + packageJson.version);
 
 var startServer = function(configPath, config) {
+  var publicUrl = opts.public_url;
+  if (publicUrl && publicUrl.lastIndexOf('/') !== publicUrl.length - 1) {
+    publicUrl += '/';
+  }
   return require('./server')({
     configPath: configPath,
     config: config,
     bind: opts.bind,
     port: opts.port,
-    cors: opts.cors
+    cors: opts.cors,
+    publicUrl: publicUrl
   });
 };
 
