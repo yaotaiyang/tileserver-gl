@@ -269,6 +269,7 @@ function start(opts) {
           data['key_query_part'] =
               req.query.key ? 'key=' + req.query.key + '&amp;' : '';
           data['key_query'] = req.query.key ? '?key=' + req.query.key : '';
+          if(template === 'wmts')res.set('Content-Type', 'text/xml');
           return res.status(200).send(compiled(data));
         });
         resolve();
@@ -369,7 +370,7 @@ function start(opts) {
     return res.redirect(301, '/styles/' + req.params.id + '/');
   });
   */
-  serveTemplate('/wmts/:id/$', 'wmts', function(req) {
+  serveTemplate('/styles/:id/wmts.xml', 'wmts', function(req) {
     var id = req.params.id;
     var wmts = clone((config.styles || {})[id]);
     if (!wmts) {
@@ -381,7 +382,6 @@ function start(opts) {
     wmts.id = id;
     wmts.name = (serving.styles[id] || serving.rendered[id]).name;
     wmts.baseUrl = (req.get('X-Forwarded-Protocol')?req.get('X-Forwarded-Protocol'):req.protocol) + '://' + req.get('host');
-    console.log(wmts)
     return wmts;
   });
 
