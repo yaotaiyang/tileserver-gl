@@ -1,11 +1,11 @@
-FROM node:6-stretch
+FROM node:6.15.1-stretch
 MAINTAINER Petr Sloup <petr.sloup@klokantech.com>
 
 ENV NODE_ENV="production"
 VOLUME /data
 WORKDIR /data
 EXPOSE 80
-ENTRYPOINT ["/usr/src/app/run.sh"]
+ENTRYPOINT ["/bin/bash", "/usr/src/app/run.sh"]
 
 RUN apt-get -qq update \
 && DEBIAN_FRONTEND=noninteractive apt-get -y install \
@@ -21,6 +21,7 @@ RUN apt-get -qq update \
     libprotobuf-dev \
     libxxf86vm-dev \
     xvfb \
+    x11-utils \
 && apt-get clean
 
 RUN mkdir -p /usr/src/app

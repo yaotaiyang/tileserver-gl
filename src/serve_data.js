@@ -37,7 +37,15 @@ module.exports = function(options, repo, params, id, styles, publicUrl) {
   var source;
   var sourceInfoPromise = new Promise(function(resolve, reject) {
     source = new mbtiles(mbtilesFile, function(err) {
+      if (err) {
+        reject(err);
+        return;
+      }
       source.getInfo(function(err, info) {
+        if (err) {
+          reject(err);
+          return;
+        }
         tileJSON['name'] = id;
         tileJSON['format'] = 'pbf';
 
@@ -81,7 +89,7 @@ module.exports = function(options, repo, params, id, styles, publicUrl) {
     source.getTile(z, x, y, function(err, data, headers) {
       if (err) {
         if (/does not exist/.test(err.message)) {
-          return res.status(404).send(err.message);
+          return res.status(204).send(err.message);
         } else {
           return res.status(500).send(err.message);
         }
@@ -176,9 +184,7 @@ module.exports = function(options, repo, params, id, styles, publicUrl) {
     return res.send(info);
   });
 
-  return new Promise(function(resolve, reject) {
-    sourceInfoPromise.then(function() {
-      resolve(app);
-    });
+  return sourceInfoPromise.then(function() {
+    return app;
   });
 };

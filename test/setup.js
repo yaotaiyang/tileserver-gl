@@ -18,5 +18,5 @@ before(function() {
 
 after(function() {
   console.log('global teardown');
-  global.server.close(function() { console.log('Done'); });
+  global.server.close(function() { console.log('Done'); process.exit(); });
 });
