@@ -43,7 +43,7 @@ var opts = require('commander')
     'Disable Cross-origin resource sharing headers'
   )
   .option(
-    '-u|--public_url',
+    '-u|--public_url <url>',
     'Enable exposing the server on subpaths, not necessarily the root of the domain'
   )
   .option(
