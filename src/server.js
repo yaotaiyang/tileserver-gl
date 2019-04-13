@@ -41,12 +41,11 @@ function start(opts) {
 
   app.enable('trust proxy');
 
-  if (process.env.NODE_ENV == 'production') {
-    app.use(morgan('tiny', {
-      skip: function(req, res) { return opts.silent && (res.statusCode == 200 || res.statusCode == 304) }
-    }));
-  } else if (process.env.NODE_ENV !== 'test') {
-    app.use(morgan('dev', {
+  if (process.env.NODE_ENV !== 'test') {
+    var defaultLogFormat = process.env.NODE_ENV == 'production' ? 'tiny' : 'dev';
+    var logFormat = opts.logFormat || defaultLogFormat;
+    app.use(morgan(logFormat, {
+      stream: opts.logFile ? fs.createWriteStream(opts.logFile, { flags: 'a' }) : process.stdout,
       skip: function(req, res) { return opts.silent && (res.statusCode == 200 || res.statusCode == 304) }
     }));
   }
