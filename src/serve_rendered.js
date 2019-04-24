@@ -177,7 +177,7 @@ module.exports = function(options, repo, params, id, publicUrl, dataResolver) {
                 format = parts[5].split('.')[1];
             source.getTile(z, x, y, function(err, data, headers) {
               if (err) {
-                //console.log('MBTiles error, serving empty', err);
+                if (options.verbose) console.log('MBTiles error, serving empty', err);
                 createEmptyResponse(sourceInfo.format, sourceInfo.color, callback);
                 return;
               }
