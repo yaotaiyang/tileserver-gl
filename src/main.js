@@ -81,6 +81,7 @@ var startServer = function(configPath, config) {
     bind: opts.bind,
     port: opts.port,
     cors: opts.cors,
+    verbose: opts.verbose,
     silent: opts.silent,
     logFile: opts.log_file,
     logFormat: opts.log_format,
