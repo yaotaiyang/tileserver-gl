@@ -197,7 +197,7 @@ function start(opts) {
         name: styleJSON.name,
         id: id,
         url: utils.getPublicUrl(opts.publicUrl, req) +
-             '/styles/' + id + '/style.json' + query
+             'styles/' + id + '/style.json' + query
       });
     });
     res.send(result);
